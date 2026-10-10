@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/paperclipinc/hermes-operator/internal/cachescope"
 	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
@@ -18,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	hermesv1 "github.com/paperclipinc/hermes-operator/api/v1"
+	"github.com/paperclipinc/hermes-operator/internal/cachescope"
 )
 
 // HermesInstanceValidator enforces design §7.3 rules.

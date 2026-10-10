@@ -20,10 +20,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/paperclipinc/hermes-operator/internal/cachescope"
 	"time"
 
 	hermesv1 "github.com/paperclipinc/hermes-operator/api/v1"
+	"github.com/paperclipinc/hermes-operator/internal/cachescope"
 	"github.com/paperclipinc/hermes-operator/internal/resources"
 
 	appsv1 "k8s.io/api/apps/v1"
