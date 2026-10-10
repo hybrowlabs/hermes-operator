@@ -40,6 +40,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	hermesv1 "github.com/paperclipinc/hermes-operator/api/v1"
+	"github.com/paperclipinc/hermes-operator/internal/cachescope"
 	"github.com/paperclipinc/hermes-operator/internal/controller"
 	"github.com/paperclipinc/hermes-operator/internal/oci"
 	internalwebhook "github.com/paperclipinc/hermes-operator/internal/webhook"
@@ -84,6 +85,7 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var tlsOpts []func(*tls.Config)
+	var secretNamespaces string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -94,6 +96,12 @@ func main() {
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	flag.StringVar(&secretNamespaces, "secret-namespaces", os.Getenv("SECRET_NAMESPACES"),
+		"Comma-separated namespaces in which the manager caches (list/watch) Secrets. "+
+			"Empty keeps the cluster-wide Secret cache (default). Set this when the ServiceAccount's "+
+			"Secret read access is limited to namespaced Roles. HermesInstances outside the listed namespaces are NOT supported: "+
+			"they are reported with an explicit error and warning. Each listed namespace needs a Role with get/list/watch "+
+			"and create/update/patch/delete on secrets; a listed namespace without list/watch makes the manager fail at start.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -152,6 +160,7 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "1f361c61.agent",
+		Cache:                  cachescope.Options(cachescope.Parse(secretNamespaces)),
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
@@ -200,6 +209,7 @@ func main() {
 		Scheme:                        mgr.GetScheme(),
 		Recorder:                      mgr.GetEventRecorderFor("hermesinstance"),
 		PrometheusOperatorCRDsPresent: hasPromOpCRDs,
+		SecretNamespaces:              cachescope.Parse(secretNamespaces),
 		Backup:                        backupSub,
 		Restore:                       restoreSub,
 		AutoUpdate:                    autoUpdateSub,
@@ -228,7 +238,7 @@ func main() {
 	}
 
 	defaulter := &internalwebhook.HermesInstanceDefaulter{Client: mgr.GetClient()}
-	instValidator := &internalwebhook.HermesInstanceValidator{Client: mgr.GetClient()}
+	instValidator := &internalwebhook.HermesInstanceValidator{Client: mgr.GetClient(), SecretNamespaces: cachescope.Parse(secretNamespaces)}
 	if err := hermesv1.RegisterHermesInstanceWebhook(mgr, defaulter, instValidator); err != nil {
 		setupLog.Error(err, "unable to register HermesInstance webhook")
 		os.Exit(1)

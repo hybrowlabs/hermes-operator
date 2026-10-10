@@ -18,7 +18,9 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/paperclipinc/hermes-operator/internal/cachescope"
 	"time"
 
 	hermesv1 "github.com/paperclipinc/hermes-operator/api/v1"
@@ -54,6 +56,9 @@ type HermesInstanceReconciler struct {
 	// PrometheusOperatorCRDsPresent caches whether ServiceMonitor/PrometheusRule
 	// CRDs are installed. Probed once at startup by cmd/manager.
 	PrometheusOperatorCRDsPresent bool
+
+	// SecretNamespaces mirrors the manager --secret-namespaces; empty = unrestricted.
+	SecretNamespaces []string
 
 	Backup     *BackupReconciler
 	Restore    *RestoreReconciler
@@ -184,6 +189,9 @@ func (r *HermesInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 // --- per-subsystem reconcilers ---
 
 func (r *HermesInstanceReconciler) reconcileSecret(ctx context.Context, inst *hermesv1.HermesInstance) error {
+	if !cachescope.Allows(r.SecretNamespaces, inst.Namespace) {
+		return errors.New(cachescope.NotInScopeMessage(inst.Namespace, r.SecretNamespaces))
+	}
 	obj := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 		Name: resources.GatewayTokenSecretName(inst), Namespace: inst.Namespace,
 	}}
