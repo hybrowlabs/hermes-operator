@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/paperclipinc/hermes-operator/internal/cachescope"
 	"reflect"
 
 	corev1 "k8s.io/api/core/v1"
@@ -22,6 +23,15 @@ import (
 // HermesInstanceValidator enforces design §7.3 rules.
 type HermesInstanceValidator struct {
 	Client client.Client
+	// SecretNamespaces mirrors the manager's --secret-namespaces. Empty = unrestricted.
+	SecretNamespaces []string
+}
+
+func (v *HermesInstanceValidator) secretOutOfScope(namespace string) (string, bool) {
+	if cachescope.Allows(v.SecretNamespaces, namespace) {
+		return "", false
+	}
+	return cachescope.NotInScopeMessage(namespace, v.SecretNamespaces), true
 }
 
 var _ admission.CustomValidator = &HermesInstanceValidator{}
@@ -120,6 +130,10 @@ func (v *HermesInstanceValidator) validateGateways(ctx context.Context, inst *he
 		}
 		if v.Client == nil {
 			// No client available: skip the existence check, fail-open.
+			return nil
+		}
+		if msg, out := v.secretOutOfScope(inst.Namespace); out {
+			warnings = append(warnings, fmt.Sprintf("%s: %s", field, msg))
 			return nil
 		}
 		var s corev1.Secret
@@ -222,6 +236,10 @@ func (v *HermesInstanceValidator) validateTailscale(ctx context.Context, inst *h
 	ref := ts.AuthKey.SecretRef
 	if v.Client == nil {
 		// No client available: skip the existence check, fail-open.
+		return warnings, nil
+	}
+	if msg, out := v.secretOutOfScope(inst.Namespace); out {
+		warnings = append(warnings, "spec.tailscale.authKey.secretRef: "+msg)
 		return warnings, nil
 	}
 	var s corev1.Secret
@@ -379,7 +397,9 @@ func equalMigration(a, b hermesv1.MigrationSpec) bool {
 // that are likely typos or that signal coming pitfalls (autoUpdate + tag=latest).
 func (v *HermesInstanceValidator) crossCheckSecrets(ctx context.Context, inst *hermesv1.HermesInstance) admission.Warnings {
 	var warnings admission.Warnings
-	if inst.Spec.Backup.S3 != nil && v.Client != nil {
+	if msg, out := v.secretOutOfScope(inst.Namespace); out && inst.Spec.Backup.S3 != nil && v.Client != nil {
+		warnings = append(warnings, "spec.backup.s3.credentialsSecretRef: "+msg)
+	} else if inst.Spec.Backup.S3 != nil && v.Client != nil {
 		name := inst.Spec.Backup.S3.CredentialsSecretRef.Name
 		if name != "" {
 			secret := &corev1.Secret{}

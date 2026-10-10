@@ -99,7 +99,9 @@ func main() {
 	flag.StringVar(&secretNamespaces, "secret-namespaces", os.Getenv("SECRET_NAMESPACES"),
 		"Comma-separated namespaces in which the manager caches (list/watch) Secrets. "+
 			"Empty keeps the cluster-wide Secret cache (default). Set this when the ServiceAccount's "+
-			"Secret read access is limited to namespaced Roles.")
+			"Secret read access is limited to namespaced Roles. HermesInstances outside the listed namespaces are NOT supported: "+
+			"they are reported with an explicit error and warning. Each listed namespace needs a Role with get/list/watch "+
+			"and create/update/patch/delete on secrets; a listed namespace without list/watch makes the manager fail at start.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -207,6 +209,7 @@ func main() {
 		Scheme:                        mgr.GetScheme(),
 		Recorder:                      mgr.GetEventRecorderFor("hermesinstance"),
 		PrometheusOperatorCRDsPresent: hasPromOpCRDs,
+		SecretNamespaces:              cachescope.Parse(secretNamespaces),
 		Backup:                        backupSub,
 		Restore:                       restoreSub,
 		AutoUpdate:                    autoUpdateSub,
@@ -235,7 +238,7 @@ func main() {
 	}
 
 	defaulter := &internalwebhook.HermesInstanceDefaulter{Client: mgr.GetClient()}
-	instValidator := &internalwebhook.HermesInstanceValidator{Client: mgr.GetClient()}
+	instValidator := &internalwebhook.HermesInstanceValidator{Client: mgr.GetClient(), SecretNamespaces: cachescope.Parse(secretNamespaces)}
 	if err := hermesv1.RegisterHermesInstanceWebhook(mgr, defaulter, instValidator); err != nil {
 		setupLog.Error(err, "unable to register HermesInstance webhook")
 		os.Exit(1)

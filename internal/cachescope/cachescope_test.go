@@ -53,3 +53,30 @@ func TestOptions_MultipleNamespaces(t *testing.T) {
 		}
 	}
 }
+
+func TestAllows(t *testing.T) {
+	assert.True(t, Allows(nil, "anything"), "empty list = unrestricted")
+	assert.True(t, Allows([]string{"hermes-ck"}, "hermes-ck"))
+	assert.False(t, Allows([]string{"hermes-ck"}, "paperclip"))
+	assert.True(t, Allows([]string{"a", "b"}, "b"))
+}
+
+func TestOptions_MultiNamespaceDoesNotSetDefaultNamespaces(t *testing.T) {
+	o := Options([]string{"a", "b"})
+	assert.Empty(t, o.DefaultNamespaces)
+	var found bool
+	for obj, cfg := range o.ByObject {
+		if _, ok := obj.(*corev1.Secret); ok {
+			found = true
+			assert.Len(t, cfg.Namespaces, 2)
+		}
+	}
+	assert.True(t, found, "Secret must be scoped")
+}
+
+func TestNotInScopeMessage(t *testing.T) {
+	msg := NotInScopeMessage("paperclip", []string{"hermes-ck"})
+	assert.Contains(t, msg, "--secret-namespaces")
+	assert.Contains(t, msg, "paperclip")
+	assert.Contains(t, msg, "hermes-ck")
+}
